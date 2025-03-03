@@ -6,6 +6,7 @@ import sys
 import random
 import time
 import os
+import nmap
 
 # ANSI color codes for terminal output
 class Colors:
@@ -119,7 +120,7 @@ def print_ascii_logo():
 
 def print_game_menu():
     """Print retro-style game menu"""
-    print(f"\n{Colors.BLUE}╔═════════════════════════════════════════════════════════════════╗{Colors.ENDC}")
+    print(f"\n{Colors.BLUE}╔═══════════════════════════════════════════════════════════════╗{Colors.ENDC}")
     print(f"{Colors.BLUE}║ {Colors.YELLOW}[MAIN MENU]{Colors.BLUE}                                                 ║{Colors.ENDC}")
     print(f"{Colors.BLUE}╠═════════════════════════════════════════════════════════════════╣{Colors.ENDC}")
     print(f"{Colors.BLUE}║ {Colors.GREEN}1. START NEW SCAN{Colors.BLUE}                                            ║{Colors.ENDC}")
@@ -128,13 +129,13 @@ def print_game_menu():
 
 def print_table_header():
     """Print the results table header"""
-    print(f"\n{Colors.BLUE}╔═══════════════════╦═══════════════╦═══════════════════════╗{Colors.ENDC}")
-    print(f"{Colors.BLUE}║ {Colors.CYAN}TARGET IP        {Colors.BLUE}║ {Colors.CYAN}OPEN PORT      {Colors.BLUE}║ {Colors.CYAN}SERVICE              {Colors.BLUE}║{Colors.ENDC}")
-    print(f"{Colors.BLUE}╠═══════════════════╬═══════════════╬═══════════════════════╣{Colors.ENDC}")
+    print(f"\n{Colors.BLUE}╔═══════════════════╦═══════════════╦═════════════════════╗{Colors.ENDC}")
+    print(f"{Colors.BLUE}  ║ {Colors.CYAN}TARGET IP        {Colors.BLUE}║ {Colors.CYAN}OPEN PORT      {Colors.BLUE}║ {Colors.CYAN}SERVICE              {Colors.BLUE}║{Colors.ENDC}")
+    print(f"{Colors.BLUE}  ╠═══════════════════╬═══════════════╬═════════════════════╣{Colors.ENDC}")
 
 def print_table_footer():
     """Print the results table footer"""
-    print(f"{Colors.BLUE}╚═══════════════════╩═══════════════╩═══════════════════════╝{Colors.ENDC}\n")
+    print(f"{Colors.BLUE}  ╚═══════════════════╩═══════════════╩═════════════════════╝{Colors.ENDC}\n")
 
 def print_result_row(ip, port, service):
     """Print a row in the results table"""
@@ -143,14 +144,14 @@ def print_result_row(ip, port, service):
 def print_mission_complete(hosts_up, total_open_ports, duration):
     """Print mission complete screen"""
     print(f"\n{Colors.GREEN}╔═════════════════════════════════════════════════════════════════╗{Colors.ENDC}")
-    print(f"{Colors.GREEN}║ {Colors.YELLOW}MISSION COMPLETE!{Colors.GREEN}                                          ║{Colors.ENDC}")
-    print(f"{Colors.GREEN}╠═════════════════════════════════════════════════════════════════╣{Colors.ENDC}")
-    print(f"{Colors.GREEN}║ {Colors.CYAN}SCAN STATISTICS:{Colors.GREEN}                                             ║{Colors.ENDC}")
-    print(f"{Colors.GREEN}║ {Colors.WHITE}TIME ELAPSED: {duration:.2f} SECONDS{Colors.GREEN}                                 ║{Colors.ENDC}")
-    print(f"{Colors.GREEN}║ {Colors.WHITE}HOSTS DISCOVERED: {hosts_up}{Colors.GREEN}                                         ║{Colors.ENDC}")
-    print(f"{Colors.GREEN}║ {Colors.WHITE}VULNERABILITIES FOUND: {total_open_ports}{Colors.GREEN}                                   ║{Colors.ENDC}")
-    print(f"{Colors.GREEN}║ {Colors.WHITE}HACKING SKILL INCREASED: +{random.randint(10, 50)} XP{Colors.GREEN}                         ║{Colors.ENDC}")
-    print(f"{Colors.GREEN}╚═════════════════════════════════════════════════════════════════╝{Colors.ENDC}")
+    print(f"{Colors.GREEN}  ║ {Colors.YELLOW}MISSION COMPLETE!{Colors.GREEN}                                          ║{Colors.ENDC}")
+    print(f"{Colors.GREEN}  ╠═════════════════════════════════════════════════════════════════╣{Colors.ENDC}")
+    print(f"{Colors.GREEN}  ║ {Colors.CYAN}SCAN STATISTICS:{Colors.GREEN}                                             ║{Colors.ENDC}")
+    print(f"{Colors.GREEN}  ║ {Colors.WHITE}TIME ELAPSED: {duration:.2f} SECONDS{Colors.GREEN}                                 ║{Colors.ENDC}")
+    print(f"{Colors.GREEN}  ║ {Colors.WHITE}HOSTS DISCOVERED: {hosts_up}{Colors.GREEN}                                         ║{Colors.ENDC}")
+    print(f"{Colors.GREEN}  ║ {Colors.WHITE}VULNERABILITIES FOUND: {total_open_ports}{Colors.GREEN}                                   ║{Colors.ENDC}")
+    print(f"{Colors.GREEN}  ║ {Colors.WHITE}HACKING SKILL INCREASED: +{random.randint(10, 50)} XP{Colors.GREEN}                         ║{Colors.ENDC}")
+    print(f"{Colors.GREEN}  ╚═════════════════════════════════════════════════════════════════╝{Colors.ENDC}")
 
 def generate_ip_range(network_str):
     """Generate a list of IP addresses from a network string"""
@@ -193,7 +194,7 @@ def main():
         choice = input(f"\n{Colors.YELLOW}SELECT OPTION [1-2]:{Colors.ENDC} ")
         
         if choice == "2":
-            typewriter_effect(f"\n{Colors.RED}EXITING SYSTEM... GOODBYE HACKER!{Colors.ENDC}")
+            typewriter_effect(f"\n{Colors.RED}EXITING SYSTEM... STAY CURIOUS AND KEEP HACKING, ETHICALLY!{Colors.ENDC}")
             break
         
         if choice == "1":
@@ -251,6 +252,7 @@ def main():
             results = []
             
             # Scan each host in the network
+            nm = nmap.PortScanner()
             total_hosts = len(ip_range)
             for i, ip in enumerate(ip_range):
                 # Show progress
@@ -258,14 +260,19 @@ def main():
                 bar = loading_bar(total_hosts, i + 1)
                 print(f"\r{Colors.BOLD}SCANNING TARGET: {ip} {bar}{Colors.ENDC}", end="")
                 
-                if simulate_host_scan(ip):
-                    hosts_up += 1
-                    open_ports = simulate_port_scan(ip, ports)
-                    total_open_ports += len(open_ports)
-                    
-                    for port in open_ports:
-                        service = get_service_name(port)
-                        results.append((str(ip), port, service))
+                try:
+                    nm.scan(ip, arguments='-sP')
+                    if nm[ip].state() == 'up':
+                        hosts_up += 1
+                        nm.scan(ip, arguments=f'-p {",".join(map(str, ports))}')
+                        for port in ports:
+                            if nm[ip].has_tcp(port) and nm[ip]['tcp'][port]['state'] == 'open':
+                                open_ports.append(port)
+                                service = get_service_name(port)
+                                results.append((str(ip), port, service))
+                        total_open_ports += len(open_ports)
+                except Exception as e:
+                    print(f"\n{Colors.RED}ERROR SCANNING {ip}: {e}{Colors.ENDC}")
                 
                 # Add some randomness to make it look more "hacky"
                 if random.random() < 0.1:
@@ -273,9 +280,7 @@ def main():
                     print(f"\r{Colors.RED}FIREWALL DETECTED! BYPASSING...{Colors.ENDC}", end="")
                     time.sleep(0.5)
                 
-                # Slow down the scan a bit to make it more dramatic
-                time.sleep(0.05)
-            
+                            
             # Clear progress line
             print("\r" + " " * 100 + "\r", end="")
             
@@ -298,7 +303,17 @@ def main():
             duration = time.time() - start_time
             print_mission_complete(hosts_up, total_open_ports, duration)
             
-            input(f"\n{Colors.YELLOW}PRESS ENTER TO RETURN TO MAIN MENU...{Colors.ENDC}")
+            save_choice = input(f"\n{Colors.YELLOW}PRESS ENTER TO RETURN TO MAIN MENU or 's' TO SAVE THE SEARCH...{Colors.ENDC}")
+            if save_choice.lower() == 's':
+                save_path = input(f"\n{Colors.GREEN}ENTER FILE PATH TO SAVE RESULTS (e.g., /path/to/results.txt):{Colors.ENDC} ")
+                try:
+                    with open(save_path, 'w') as file:
+                        file.write("TARGET IP\tOPEN PORT\tSERVICE\n")
+                        for ip, port, service in results:
+                            file.write(f"{ip}\t{port}\t{service}\n")
+                    print(f"{Colors.GREEN}RESULTS SAVED SUCCESSFULLY TO {save_path}{Colors.ENDC}")
+                except Exception as e:
+                    print(f"{Colors.RED}FAILED TO SAVE RESULTS: {e}{Colors.ENDC}")
             clear_screen()
             print_ascii_logo()
 
