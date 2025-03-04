@@ -7,7 +7,7 @@ import random
 import time
 import os
 import nmap
-import ipaddress  # ✅ Added for proper IP range handling
+import ipaddress
 
 # ANSI color codes for terminal output
 class Colors:
@@ -29,7 +29,7 @@ def clear_screen():
     """Clear the terminal screen"""
     os.system('cls' if sys.platform.lower() == 'windows' else 'clear')
 
-def typewriter_effect(text, delay=0.03):
+def typewriter_effect(text, delay=0.02):
     """Print text with a typewriter effect"""
     for char in text:
         sys.stdout.write(char)
@@ -46,12 +46,39 @@ def hacker_animation(duration=2):
         time.sleep(0.05)
     print(" " * 100, end="\r")
 
+def loading_effect(text, duration=2):
+    """Show a loading effect with dots"""
+    for _ in range(duration):
+        for dots in [".  ", ".. ", "..."]:
+            print(f"\r{Colors.YELLOW}{text}{dots}{Colors.ENDC}", end="")
+            time.sleep(0.5)
+    print()
+
 def loading_bar(total, current, width=50):
     """Display a retro-style loading bar"""
     percent = current / total
     filled_width = int(width * percent)
     bar = f"{Colors.GREEN_BG}{'█' * filled_width}{Colors.BLACK_BG}{' ' * (width - filled_width)}{Colors.ENDC}"
     return f"[{bar}] {int(percent * 100)}%"
+
+def display_banner():
+    """Display a fun retro gaming banner with animation"""
+    clear_screen()
+    banner = f"""
+{Colors.CYAN}
+  ____  _   _    _    ____ _  __    _    ____  _   _    _    _   _ ____  ____  
+ / ___|| | | |  / \\  / ___| |/ /   / \\  |  _ \\| | | |  / \\  | | | |  _ \\/ ___| 
+ \\___ \\| |_| | / _ \\| |   | ' /   / _ \\ | |_) | |_| | / _ \\ | | | | |_) \\___ \\ 
+  ___) |  _  |/ ___ \\ |___| . \\  / ___ \\|  __/|  _  |/ ___ \\| |_| |  __/ ___) |
+ |____/|_| |_/_/   \\_\\____|_|\\_\\/_/   \\_\\_|   |_| |_/_/   \\_\\____/|_|   |____/ 
+{Colors.ENDC}
+    """
+    for _ in range(2):  # Flashes the banner
+        typewriter_effect(banner, delay=0.001)
+        time.sleep(0.3)
+        clear_screen()
+        time.sleep(0.2)
+    typewriter_effect(banner, delay=0.001)
 
 def get_service_name(port):
     """Get service name for a port number"""
@@ -85,7 +112,7 @@ def scan_network(ip_range, ports):
         open_ports = []
         try:
             nm.scan(ip, arguments='-sP')
-            if ip in nm.all_hosts() and nm[ip].state() == 'up':  # ✅ Fixed KeyError
+            if ip in nm.all_hosts() and nm[ip].state() == 'up':
                 hosts_up += 1
                 nm.scan(ip, arguments=f'-p {",".join(map(str, ports))} -sS -sV -O')
                 for port in ports:
@@ -96,18 +123,12 @@ def scan_network(ip_range, ports):
         except Exception as e:
             print(f"\n{Colors.RED}ERROR SCANNING {ip}: {e}{Colors.ENDC}")
 
-        if random.random() < 0.1:
-            time.sleep(0.2)
-            print(f"\r{Colors.RED}FIREWALL DETECTED! BYPASSING...{Colors.ENDC}", end="")
-            time.sleep(0.5)
-
     print("\r" + " " * 100 + "\r", end="")  # Clear progress bar
     return hosts_up, total_open_ports, results
 
 def main():
-    clear_screen()
-    typewriter_effect(f"{Colors.YELLOW}NETWORK HACKER 2025 - RETRO SCANNER{Colors.ENDC}")
-
+    display_banner()
+    
     while True:
         choice = input(f"\n{Colors.YELLOW}SELECT OPTION: 1. START SCAN  2. EXIT {Colors.ENDC} ")
         if choice == "2":
@@ -120,18 +141,11 @@ def main():
             ip_range = generate_ip_range(network)
 
             port_range = input(f"\n{Colors.GREEN}ENTER PORT RANGE (e.g., 1-1024) OR 'common':{Colors.ENDC} ")
-            if port_range.lower() == 'common':
-                ports = [21, 22, 23, 25, 53, 80, 110, 443, 445, 3306, 3389, 8080]
-            else:
-                try:
-                    start_port, end_port = map(int, port_range.split('-'))
-                    ports = list(range(start_port, end_port + 1))
-                except ValueError:
-                    print(f"{Colors.RED}INVALID PORT RANGE!{Colors.ENDC}")
-                    continue
+            ports = [21, 22, 23, 25, 53, 80, 110, 443, 445, 3306, 3389, 8080] if port_range.lower() == 'common' else list(range(*map(int, port_range.split('-'))))
 
-            typewriter_effect(f"\n{Colors.YELLOW}SCANNING NETWORK {network}...{Colors.ENDC}")
+            loading_effect("Initializing scanner", 3)
             hacker_animation(3)
+            loading_effect("Bypassing firewalls", 2)
 
             start_time = time.time()
             hosts_up, total_open_ports, results = scan_network(ip_range, ports)
@@ -139,30 +153,26 @@ def main():
 
             typewriter_effect(f"\n{Colors.GREEN}SCAN COMPLETE!{Colors.ENDC}")
 
-            if results:
-                print(f"\n{Colors.YELLOW}VULNERABILITIES FOUND:{Colors.ENDC}")
-                for ip, port, service in results:
-                    print(f"{Colors.GREEN}{ip:<17} {Colors.YELLOW}{port:<10} {Colors.CYAN}{service:<15}{Colors.ENDC}")
-            else:
-                print(f"\n{Colors.RED}NO VULNERABILITIES FOUND.{Colors.ENDC}")
+            for ip, port, service in results:
+                typewriter_effect(f"{Colors.GREEN}{ip:<17} {Colors.YELLOW}{port:<10} {Colors.CYAN}{service:<15}{Colors.ENDC}", delay=0.01)
 
             print(f"\n{Colors.GREEN}HOSTS UP: {hosts_up} | TOTAL OPEN PORTS: {total_open_ports} | TIME: {duration:.2f}s{Colors.ENDC}")
 
-            if input(f"\n{Colors.YELLOW}SAVE RESULTS? (y/n): {Colors.ENDC}").lower() == 'y':
-                save_path = input(f"{Colors.GREEN}ENTER FILE PATH:{Colors.ENDC} ")
-                try:
-                    with open(save_path, 'w') as file:
-                        file.write("TARGET IP\tPORT\tSERVICE\n")
-                        for ip, port, service in results:
-                            file.write(f"{ip}\t{port}\t{service}\n")
-                    print(f"{Colors.GREEN}SAVED TO {save_path}{Colors.ENDC}")
-                except Exception as e:
-                    print(f"{Colors.RED}FAILED TO SAVE: {e}{Colors.ENDC}")
+
+            def save_results_to_file(results, filename="IP_reconnaissance.txt"):
+                """Save scan results to a file"""
+                with open(filename, 'w') as file:
+                    file.write("IP Address       Port       Service\n")
+                    file.write("="*40 + "\n")
+                    for ip, port, service in results:
+                        file.write(f"{ip:<17} {port:<10} {service:<15}\n")
+                print(f"\n{Colors.GREEN}Results saved to {filename}{Colors.ENDC}")
+
+            # Save results to file after scan
+            save_results_to_file(results)
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
         print(f"\n{Colors.RED}ABORTED BY USER.{Colors.ENDC}")
-    except Exception as e:
-        print(f"\n{Colors.RED}ERROR: {e}{Colors.ENDC}")
