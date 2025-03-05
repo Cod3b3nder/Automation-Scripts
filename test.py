@@ -59,9 +59,9 @@ def display_banner():
         print(f"{random.choice(colors)}{line}{Colors.ENDC}", end="\r")
         time.sleep(0.05)
     print(" " * 100, end="\r")
-        line = "".join(random.choice("0123456789ABCDEF") + " " for _ in range(random.randint(50, 80)))
-        print(f"{random.choice([Colors.GREEN, Colors.CYAN, Colors.RED])}{line}{Colors.ENDC}", end="\r")
-        time.sleep(0.05)
+    line = "".join(random.choice(choices) + " " for _ in range(length))
+    print(f"{random.choice(colors)}{line}{Colors.ENDC}", end="\r")
+    time.sleep(0.05)
     print(" " * 100, end="\r")
 
 # Progress bar animation
