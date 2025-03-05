@@ -7,7 +7,11 @@ import sys
 import random
 import time
 import os
-import nmap
+try:
+    import nmap
+except ImportError:
+    print(f"{Colors.RED}Error: The 'nmap' module is not installed. Please install it using 'pip install python-nmap'.{Colors.ENDC}")
+    sys.exit(1)
 import socket
 
 # ANSI color codes for retro aesthetics
@@ -46,12 +50,15 @@ def display_banner():
   ╚═╝  ╚═══╝╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝
   {Colors.YELLOW}ETHICAL HACKER NETWORK SCANNER{Colors.ENDC}
 """
-    typewriter_effect(banner, delay=0.001)
-
-# Simulated hacking animation
-def hacker_animation(duration=2):
     start_time = time.time()
+    choices = "0123456789ABCDEF"
+    colors = [Colors.GREEN, Colors.CYAN, Colors.RED]
     while time.time() - start_time < duration:
+        length = random.randint(50, 80)
+        line = "".join(random.choice(choices) + " " for _ in range(length))
+        print(f"{random.choice(colors)}{line}{Colors.ENDC}", end="\r")
+        time.sleep(0.05)
+    print(" " * 100, end="\r")
         line = "".join(random.choice("0123456789ABCDEF") + " " for _ in range(random.randint(50, 80)))
         print(f"{random.choice([Colors.GREEN, Colors.CYAN, Colors.RED])}{line}{Colors.ENDC}", end="\r")
         time.sleep(0.05)
@@ -62,12 +69,29 @@ def loading_effect(text, duration=3):
     for _ in range(duration):
         for dots in [".  ", ".. ", "..."]:
             print(f"\r{Colors.YELLOW}{text}{dots}{Colors.ENDC}", end="")
-            time.sleep(0.5)
-    print()
-
 # Get the local network IP range
 def get_local_network():
     hostname = socket.gethostname()
+    local_ip = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    
+    ipv4 = None
+    ipv6 = None
+    
+    for info in local_ip:
+        if info[0] == socket.AF_INET:
+            ipv4 = info[4][0]
+        elif info[0] == socket.AF_INET6:
+            ipv6 = info[4][0]
+    
+    if ipv4:
+        base_ip = ".".join(ipv4.split(".")[:-1])  # Get base network (e.g., 192.168.1)
+        return f"{base_ip}.0/24"  # Scan full subnet
+    elif ipv6:
+        base_ip = ":".join(ipv6.split(":")[:-1])  # Get base network (e.g., fe80::1)
+        return f"{base_ip}::/64"  # Scan full subnet
+    else:
+        print(f"{Colors.RED}Error: No valid IP address found.{Colors.ENDC}")
+        sys.exit(1)
     local_ip = socket.gethostbyname(hostname)
     base_ip = ".".join(local_ip.split(".")[:-1])  # Get base network (e.g., 192.168.1)
     return f"{base_ip}.0/24"  # Scan full subnet
@@ -75,14 +99,12 @@ def get_local_network():
 # Get known vulnerabilities based on open ports
 def check_vulnerabilities(port):
     vulns = {
-        21: "FTP Vulnerable to Anonymous Login",
         22: "SSH Brute Force Attack Risk",
         23: "Telnet Unencrypted Login Risk",
         25: "SMTP Open Relay Exploit",
         53: "DNS Cache Poisoning Risk",
         80: "HTTP Web Server Vulnerabilities",
         110: "POP3 Password Harvesting",
-        139: "NetBIOS Exploit",
         443: "HTTPS SSL/TLS Vulnerabilities",
         445: "SMB EternalBlue Exploit",
         3306: "MySQL Weak Authentication",
@@ -98,8 +120,9 @@ def scan_local_network(network):
     loading_effect("Deploying Recon Modules", 3)
     hacker_animation(3)
 
+    # First, perform a ping scan to find live hosts
     try:
-        nm.scan(hosts=network, arguments='-p 1-1024 -sS -T4')
+        nm.scan(hosts=network, arguments='-sn')
     except nmap.PortScannerError as e:
         print(f"{Colors.RED}PortScannerError: {e}{Colors.ENDC}")
         sys.exit(1)
@@ -107,12 +130,23 @@ def scan_local_network(network):
         print(f"{Colors.RED}Unexpected error: {e}{Colors.ENDC}")
         sys.exit(1)
 
+    live_hosts = [host for host in nm.all_hosts() if nm[host].state() == 'up']
+    if not live_hosts:
+        print(f"{Colors.RED}No live hosts found on the network.{Colors.ENDC}")
+        return []
+
     results = []
-    for host in nm.all_hosts():
-        if 'tcp' in nm[host]:
-            open_ports = [p for p in nm[host]['tcp'] if nm[host]['tcp'][p]['state'] == 'open']
-            results.append((host, open_ports))
-    
+    for host in live_hosts:
+        try:
+            nm.scan(hosts=host, arguments='-p 1-1024 -sS -T4')
+            if 'tcp' in nm[host]:
+                open_ports = [p for p in nm[host]['tcp'] if nm[host]['tcp'][p]['state'] == 'open']
+                results.append((host, open_ports))
+        except nmap.PortScannerError as e:
+            print(f"{Colors.RED}PortScannerError: {e}{Colors.ENDC}")
+        except Exception as e:
+            print(f"{Colors.RED}Unexpected error: {e}{Colors.ENDC}")
+
     return results
 
 # Display scan results
@@ -128,9 +162,22 @@ def display_results(results):
             time.sleep(0.02)  # Slow reveal effect
 
     print(f"\n{Colors.CYAN}{'='*50}{Colors.ENDC}")
-
+    network = get_local_network()
+    while True:
+        port_range = input(f"{Colors.YELLOW}Enter port range to scan (e.g., 1-1024): {Colors.ENDC}")
+        if '-' in port_range and all(part.isdigit() for part in port_range.split('-')):
+            break
+        else:
+            print(f"{Colors.RED}Invalid port range. Please enter a valid range (e.g., 1-1024).{Colors.ENDC}")
+    results = scan_local_network(network, port_range)
 # Save results to a file
 def save_results(results, filename="scan_results.txt"):
+    if os.path.exists(filename):
+        overwrite = input(f"{Colors.YELLOW}File {filename} already exists. Overwrite? (y/n): {Colors.ENDC}").lower()
+        if overwrite != 'y':
+            print(f"{Colors.RED}Results not saved to avoid overwriting existing file.{Colors.ENDC}")
+            return
+
     with open(filename, 'w') as file:
         file.write("IP Address       Open Ports       Vulnerabilities\n")
         file.write("="*50 + "\n")
@@ -154,11 +201,13 @@ def main():
         
         # Ask to save results
         save_choice = input(f"\n{Colors.YELLOW}Save results to file? (y/n): {Colors.ENDC}").lower()
-        if save_choice == 'y':
-            save_results(results)
-
-    else:
-        print(f"\n{Colors.RED}No devices found on the network.{Colors.ENDC}")
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print(f"\n{Colors.RED}Scan Aborted by User.{Colors.ENDC}")
+    except Exception as e:
+        print(f"\n{Colors.RED}An unexpected error occurred: {e}{Colors.ENDC}")ors.ENDC}")
 
 if __name__ == "__main__":
     try:
