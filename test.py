@@ -67,8 +67,18 @@ def loading_effect(text, duration=3):
 
 # Get the local network IP range and router IP
 def get_local_network():
-    hostname = socket.gethostname()
-    local_ip = socket.gethostbyname(hostname)
+    # Create a dummy connection to an external server to get the local IP address
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # Use Google's public DNS server to determine the local IP address
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+    except Exception as e:
+        print(f"{Colors.RED}Error obtaining local IP address: {e}{Colors.ENDC}")
+        sys.exit(1)
+    finally:
+        s.close()
+
     base_ip = ".".join(local_ip.split(".")[:-1])  # Get base network (e.g., 192.168.1)
     router_ip = f"{base_ip}.1"  # Assuming the router IP is the first IP in the subnet
     return f"{base_ip}.0/24", router_ip  # Scan full subnet and return router IP
