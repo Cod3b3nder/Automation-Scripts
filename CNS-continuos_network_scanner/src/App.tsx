@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Network, MonitorDot, Shield, Terminal } from 'lucide-react';
+import { Network, MonitorDot, Shield, Terminal, AlertTriangle } from 'lucide-react';
 import { NetworkMap } from './components/NetworkMap';
 import { StatusPanel } from './components/StatusPanel';
 import { ThreatPanel } from './components/ThreatPanel';
@@ -43,6 +43,12 @@ interface NetworkData {
   timestamp: number;
 }
 
+interface ErrorState {
+  message: string;
+  type: 'error' | 'warning';
+  details?: string;
+}
+
 function MenuBar() {
   const { widgets, toggleWidget } = useWidgets();
 
@@ -68,10 +74,32 @@ function MenuBar() {
   );
 }
 
+function ErrorMessage({ error }: { error: ErrorState }) {
+  return (
+    <div className={`cyber-panel p-4 mb-4 ${
+      error.type === 'error' ? 'text-[#ff0033]' : 'text-[#f59e0b]'
+    } flex items-start space-x-3`}>
+      <div className="flex-shrink-0 mt-1">
+        {error.type === 'error' ? (
+          <Shield className="h-5 w-5" />
+        ) : (
+          <AlertTriangle className="h-5 w-5" />
+        )}
+      </div>
+      <div>
+        <p className="font-medium">{error.message}</p>
+        {error.details && (
+          <p className="mt-1 text-sm opacity-80">{error.details}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Dashboard() {
   const { widgets, updateWidget, toggleWidget } = useWidgets();
   const [networkData, setNetworkData] = useState<NetworkData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorState | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -81,7 +109,8 @@ function Dashboard() {
         const response = await fetch('http://localhost:5000/api/network');
         
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
         }
         
         const data = await response.json();
@@ -89,7 +118,26 @@ function Dashboard() {
         setError(null);
       } catch (err) {
         console.error('Error fetching network data:', err);
-        setError('Failed to connect to network scanner. Please ensure the Python server is running with administrator privileges.');
+        
+        if (err.message.includes('Failed to fetch')) {
+          setError({
+            type: 'error',
+            message: 'Failed to connect to network scanner',
+            details: 'Please ensure the Python server is running with administrator privileges and Nmap is installed correctly.'
+          });
+        } else if (err.message.includes('permission denied')) {
+          setError({
+            type: 'error',
+            message: 'Permission denied',
+            details: 'The network scanner requires administrator privileges. Please restart the application with elevated permissions.'
+          });
+        } else {
+          setError({
+            type: 'error',
+            message: 'Network scanning error',
+            details: err.message
+          });
+        }
       } finally {
         setLoading(false);
       }
@@ -120,12 +168,7 @@ function Dashboard() {
       </div>
 
       {/* Error Message */}
-      {error && (
-        <div className="cyber-panel p-4 mb-4 text-[#ff0033] flex items-center">
-          <Shield className="h-5 w-5 mr-2" />
-          {error}
-        </div>
-      )}
+      {error && <ErrorMessage error={error} />}
 
       {/* Loading State */}
       {loading && (
