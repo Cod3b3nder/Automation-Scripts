@@ -1,25 +1,122 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Html } from '@react-three/drei';
+import { OrbitControls, Html, useDragControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { AlertTriangle } from 'lucide-react';
+import create from 'zustand';
 
-// Central router node
-const router = {
-  id: 'router',
-  position: [0, 0, 0],
-  ip: '192.168.1.1',
-  ports: [80, 443, 53],
-  status: 'safe',
-  isRouter: true,
-};
+interface NodeState {
+  id: string | number;
+  position: [number, number, number];
+  ip: string;
+  ports: number[];
+  status: string;
+}
 
-const nodes = [
-  { id: 1, position: [-2, 2, 0], ip: '192.168.1.100', ports: [22, 80, 443], status: 'compromised' },
-  { id: 2, position: [2, 2, 0], ip: '192.168.1.150', ports: [21, 22, 80], status: 'warning' },
-  { id: 3, position: [-2, -2, 0], ip: '192.168.1.200', ports: [3306, 5432], status: 'safe' },
-  { id: 4, position: [2, -2, 0], ip: '192.168.1.250', ports: [80, 8080], status: 'safe' },
-];
+interface NodeStore {
+  nodes: NodeState[];
+  updateNodePosition: (id: string | number, position: [number, number, number]) => void;
+}
+
+const useNodeStore = create<NodeStore>((set) => ({
+  nodes: [
+    { id: 'router', position: [0, 0, 0], ip: '192.168.1.1', ports: [80, 443, 53], status: 'safe' },
+    { id: 1, position: [-2, 2, 0], ip: '192.168.1.100', ports: [22, 80, 443], status: 'compromised' },
+    { id: 2, position: [2, 2, 0], ip: '192.168.1.150', ports: [21, 22, 80], status: 'warning' },
+    { id: 3, position: [-2, -2, 0], ip: '192.168.1.200', ports: [3306, 5432], status: 'safe' },
+    { id: 4, position: [2, -2, 0], ip: '192.168.1.250', ports: [80, 8080], status: 'safe' },
+  ],
+  updateNodePosition: (id, position) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === id ? { ...node, position } : node
+      ),
+    })),
+}));
+
+function DraggableNode({ node }: { node: NodeState }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const updateNodePosition = useNodeStore((state) => state.updateNodePosition);
+
+  const getNodeColor = (status: string) => {
+    switch (status) {
+      case 'compromised': return '#ff0033';
+      case 'warning': return '#f59e0b';
+      default: return '#00f7ff';
+    }
+  };
+
+  const handlePointerDown = (e: THREE.Event) => {
+    e.stopPropagation();
+    setIsDragging(true);
+    document.body.style.cursor = 'grabbing';
+  };
+
+  const handlePointerUp = () => {
+    setIsDragging(false);
+    document.body.style.cursor = 'auto';
+  };
+
+  const handlePointerMove = (e: THREE.Event) => {
+    if (isDragging && meshRef.current) {
+      const { point } = e as unknown as { point: THREE.Vector3 };
+      updateNodePosition(node.id, [point.x, point.y, 0]);
+    }
+  };
+
+  return (
+    <group position={node.position}>
+      <mesh
+        ref={meshRef}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onPointerMove={handlePointerMove}
+        onPointerOver={() => setHovered(true)}
+        onPointerOut={() => setHovered(false)}
+      >
+        <sphereGeometry args={[0.3, 32, 32]} />
+        <meshStandardMaterial
+          color={getNodeColor(node.status)}
+          emissive={getNodeColor(node.status)}
+          emissiveIntensity={hovered ? 2 : 0.5}
+        />
+      </mesh>
+
+      {/* Port rings */}
+      {node.ports.map((port, index) => (
+        <PortRing
+          key={port}
+          port={port}
+          index={index}
+          total={node.ports.length}
+          radius={0.6}
+        />
+      ))}
+
+      {/* IP address */}
+      <Html position={[0, -0.8, 0]} center>
+        <div className="text-[#00f7ff] text-xs whitespace-nowrap bg-[#111111]/80 px-2 py-1 rounded">
+          {node.ip}
+        </div>
+      </Html>
+
+      {/* Hover details */}
+      {hovered && (
+        <Html position={[0, 0.8, 0]}>
+          <div className="bg-[#111111] border border-[#00f7ff] p-2 rounded text-xs text-[#00f7ff] whitespace-nowrap">
+            <div>{node.id === 'router' ? 'Router' : 'Device'}</div>
+            <div>Ports: {node.ports.join(', ')}</div>
+            <div className={`capitalize ${node.status === 'compromised' ? 'text-[#ff0033]' : ''}`}>
+              Status: {node.status}
+            </div>
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+}
 
 function PortRing({ port, index, total, radius = 0.5 }) {
   const ref = useRef();
@@ -56,6 +153,43 @@ function PortRing({ port, index, total, radius = 0.5 }) {
   );
 }
 
+function Connections() {
+  const nodes = useNodeStore((state) => state.nodes);
+  const router = nodes.find((node) => node.id === 'router');
+  const devices = nodes.filter((node) => node.id !== 'router');
+  
+  return (
+    <>
+      {devices.map((node) => (
+        <React.Fragment key={node.id}>
+          <line>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                count={2}
+                array={new Float32Array([
+                  ...router!.position,
+                  ...node.position,
+                ])}
+                itemSize={3}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial color="#00f7ff" opacity={0.3} transparent />
+          </line>
+          {[0, 1, 2].map((i) => (
+            <DataParticle
+              key={`particle-${node.id}-${i}`}
+              start={router!.position}
+              end={node.position}
+              color={node.status === 'compromised' ? '#ff0033' : '#00f7ff'}
+            />
+          ))}
+        </React.Fragment>
+      ))}
+    </>
+  );
+}
+
 function DataParticle({ start, end, color = "#00f7ff" }) {
   const ref = useRef();
   const [progress, setProgress] = React.useState(Math.random());
@@ -86,124 +220,9 @@ function DataParticle({ start, end, color = "#00f7ff" }) {
   );
 }
 
-function Node({ position, ip, ports, status, isRouter }) {
-  const meshRef = useRef();
-  const [hovered, setHovered] = React.useState(false);
-
-  useFrame((state) => {
-    if (meshRef.current && !isRouter) {
-      meshRef.current.rotation.x += 0.01;
-      meshRef.current.rotation.y += 0.01;
-    }
-  });
-
-  const getNodeColor = (status) => {
-    if (isRouter) return '#00ff00';
-    switch (status) {
-      case 'compromised': return '#ff0033';
-      case 'warning': return '#f59e0b';
-      default: return '#00f7ff';
-    }
-  };
-
-  const scale = isRouter ? 1.5 : 1;
-
-  return (
-    <group position={position}>
-      <mesh
-        ref={meshRef}
-        scale={[scale, scale, scale]}
-        onPointerOver={() => setHovered(true)}
-        onPointerOut={() => setHovered(false)}
-      >
-        <sphereGeometry args={[0.3, 32, 32]} />
-        <meshStandardMaterial
-          color={getNodeColor(status)}
-          emissive={getNodeColor(status)}
-          emissiveIntensity={hovered ? 2 : 0.5}
-        />
-      </mesh>
-
-      {/* Port rings */}
-      {ports.map((port, index) => (
-        <PortRing
-          key={port}
-          port={port}
-          index={index}
-          total={ports.length}
-          radius={0.6}
-        />
-      ))}
-
-      {/* IP address */}
-      <Html position={[0, -0.8, 0]} center>
-        <div className="text-[#00f7ff] text-xs whitespace-nowrap bg-[#111111]/80 px-2 py-1 rounded">
-          {ip}
-        </div>
-      </Html>
-
-      {/* Hover details */}
-      {hovered && (
-        <Html position={[0, 0.8, 0]}>
-          <div className="bg-[#111111] border border-[#00f7ff] p-2 rounded text-xs text-[#00f7ff] whitespace-nowrap">
-            <div>{isRouter ? 'Router' : 'Device'}</div>
-            <div>Ports: {ports.join(', ')}</div>
-            <div className={`capitalize ${status === 'compromised' ? 'text-[#ff0033]' : ''}`}>
-              Status: {status}
-            </div>
-          </div>
-        </Html>
-      )}
-    </group>
-  );
-}
-
-function Connections() {
-  const lines = [];
-  const particles = [];
-  
-  nodes.forEach((node, i) => {
-    const start = new THREE.Vector3(...router.position);
-    const end = new THREE.Vector3(...node.position);
-    
-    // Connection line
-    lines.push(
-      <line key={`router-${i}`}>
-        <bufferGeometry>
-          <bufferAttribute
-            attach="attributes-position"
-            count={2}
-            array={new Float32Array([...start.toArray(), ...end.toArray()])}
-            itemSize={3}
-          />
-        </bufferGeometry>
-        <lineBasicMaterial color="#00f7ff" opacity={0.3} transparent />
-      </line>
-    );
-
-    // Multiple data particles per connection
-    for (let j = 0; j < 3; j++) {
-      particles.push(
-        <DataParticle
-          key={`particle-${i}-${j}`}
-          start={router.position}
-          end={node.position}
-          color={node.status === 'compromised' ? '#ff0033' : '#00f7ff'}
-        />
-      );
-    }
-  });
-  
-  return (
-    <>
-      {lines}
-      {particles}
-    </>
-  );
-}
-
 function Scene() {
   const { camera } = useThree();
+  const nodes = useNodeStore((state) => state.nodes);
   
   useEffect(() => {
     camera.position.z = 7;
@@ -214,9 +233,8 @@ function Scene() {
       <ambientLight intensity={0.5} />
       <pointLight position={[10, 10, 10]} />
       <Connections />
-      <Node {...router} />
       {nodes.map((node) => (
-        <Node key={node.id} {...node} />
+        <DraggableNode key={node.id} node={node} />
       ))}
       <OrbitControls enableZoom={false} />
     </>
