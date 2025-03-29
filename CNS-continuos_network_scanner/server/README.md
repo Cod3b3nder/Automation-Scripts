@@ -1,5 +1,7 @@
 # Network Monitor Server
 
+PLEASE ! RUN REQUIREMENTS FIRST AND THEN SUDO NPM INSTALL
+
 This is a Python-based network monitoring server that provides system metrics and advanced network scanning capabilities using Nmap.
 
 ## Features
