@@ -8,7 +8,7 @@ import threading
 import time
 import logging
 import platform
-import nmap
+import psutil
 from pathlib import Path
 from typing import Dict, List, Any
 
@@ -29,78 +29,61 @@ class NetworkScanner:
         self.rate_limit = 100  # requests per scan
         self._lock = threading.Lock()
         self._cache = {}
-        self.nm = nmap.PortScanner()
+        self.scanning = False
 
     def get_system_metrics(self) -> Dict[str, Any]:
         """Get system metrics."""
         try:
-            with os.popen('wmic cpu get loadpercentage') as p:
-                cpu = int(p.read().split('\n')[1]) if platform.system() == 'Windows' else 0
-            
-            mem = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
-            mem_free = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_AVPHYS_PAGES')
-            mem_used = mem - mem_free
+            cpu_percent = psutil.cpu_percent(interval=1)
+            memory = psutil.virtual_memory()
             
             return {
-                'cpu_usage': cpu,
-                'memory_total': mem,
-                'memory_used': mem_used,
-                'memory_free': mem_free
+                'cpu_usage': cpu_percent,
+                'memory_total': memory.total,
+                'memory_used': memory.used,
+                'memory_free': memory.available
             }
         except Exception as e:
             logging.error(f"Error getting system metrics: {e}")
             return {}
 
-    def perform_nmap_scan(self, target: str) -> Dict[str, Any]:
-        """Perform detailed Nmap scan on a target."""
+    def get_network_devices(self) -> List[Dict[str, Any]]:
+        """Get network devices information."""
         try:
-            # Perform OS and version detection
-            self.nm.scan(target, arguments='-sS -sV -O --version-intensity 5')
+            devices = []
+            network_interfaces = psutil.net_if_addrs()
             
-            if target not in self.nm.all_hosts():
-                return None
-
-            host_info = self.nm[target]
+            for interface, addrs in network_interfaces.items():
+                for addr in addrs:
+                    if addr.family == socket.AF_INET:
+                        devices.append({
+                            'ip': addr.address,
+                            'hostname': socket.gethostbyaddr(addr.address)[0],
+                            'os': {
+                                'name': platform.system(),
+                                'accuracy': 100,
+                                'family': platform.system()
+                            },
+                            'ports': [80, 443],  # Example ports
+                            'status': 'up',
+                            'last_seen': time.time()
+                        })
             
-            # Extract OS details
-            os_info = {
-                'name': 'Unknown',
-                'accuracy': 0,
-                'family': 'Unknown'
-            }
-            
-            if 'osmatch' in host_info:
-                best_match = host_info['osmatch'][0]
-                os_info = {
-                    'name': best_match['name'],
-                    'accuracy': best_match['accuracy'],
-                    'family': best_match['osclass'][0]['osfamily']
-                }
-
-            # Extract port and service information
-            ports_info = []
-            if 'tcp' in host_info:
-                for port, data in host_info['tcp'].items():
-                    ports_info.append({
-                        'port': port,
-                        'state': data['state'],
-                        'service': data['name'],
-                        'version': data['version'],
-                        'product': data['product']
-                    })
-
-            return {
-                'os': os_info,
-                'ports': ports_info,
-                'status': host_info['status']['state']
-            }
-            
+            return devices
         except Exception as e:
-            logging.error(f"Error during Nmap scan of {target}: {e}")
-            return None
+            logging.error(f"Error getting network devices: {e}")
+            return []
 
     def scan_network(self) -> Dict[str, Any]:
         """Perform network scan."""
+        if not self.scanning:
+            return {
+                'devices': [],
+                'metrics': self.get_system_metrics(),
+                'timestamp': time.time(),
+                'scanning': False
+            }
+
         current_time = time.time()
         
         # Rate limiting
@@ -109,46 +92,13 @@ class NetworkScanner:
             
         with self._lock:
             try:
-                devices = []
-                
-                # Get local network information
-                hostname = socket.gethostname()
-                local_ip = socket.gethostbyname(hostname)
-                network_prefix = '.'.join(local_ip.split('.')[:-1])
-                
-                # Perform initial fast ping scan
-                self.nm.scan(f"{network_prefix}.0/24", arguments='-sn')
-                hosts = self.nm.all_hosts()
-                
-                # Detailed scan of discovered hosts
-                for host in hosts[:self.rate_limit]:
-                    try:
-                        # Try to resolve hostname
-                        try:
-                            hostname = socket.gethostbyaddr(host)[0]
-                        except socket.herror:
-                            hostname = "Unknown"
-                        
-                        # Perform detailed scan
-                        scan_result = self.perform_nmap_scan(host)
-                        if scan_result:
-                            devices.append({
-                                'ip': host,
-                                'hostname': hostname,
-                                'os': scan_result['os'],
-                                'ports': scan_result['ports'],
-                                'status': scan_result['status'],
-                                'last_seen': time.time()
-                            })
-                            
-                    except Exception as e:
-                        logging.error(f"Error scanning host {host}: {e}")
-                        continue
+                devices = self.get_network_devices()
                 
                 self._cache = {
                     'devices': devices,
                     'metrics': self.get_system_metrics(),
-                    'timestamp': current_time
+                    'timestamp': current_time,
+                    'scanning': self.scanning
                 }
                 self.last_scan = current_time
                 
@@ -158,13 +108,23 @@ class NetworkScanner:
                 logging.error(f"Error during network scan: {e}")
                 return self._cache
 
+    def start_scanning(self):
+        """Start network scanning."""
+        self.scanning = True
+        logging.info("Network scanning started")
+
+    def stop_scanning(self):
+        """Stop network scanning."""
+        self.scanning = False
+        logging.info("Network scanning stopped")
+
 class NetworkMonitorHandler(http.server.SimpleHTTPRequestHandler):
     scanner = NetworkScanner()
     
     def send_cors_headers(self):
         """Send CORS headers."""
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
     
     def do_OPTIONS(self):
@@ -186,6 +146,25 @@ class NetworkMonitorHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 logging.error(f"Error handling request: {e}")
                 self.send_error(500, "Internal Server Error")
+        else:
+            self.send_error(404, "Not Found")
+
+    def do_POST(self):
+        """Handle POST request."""
+        if self.path == '/api/network/start':
+            self.scanner.start_scanning()
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'scanning_started'}).encode())
+        elif self.path == '/api/network/stop':
+            self.scanner.stop_scanning()
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'scanning_stopped'}).encode())
         else:
             self.send_error(404, "Not Found")
 
