@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Network, MonitorDot, Shield, Terminal, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Network, MonitorDot, Shield, Terminal, AlertTriangle, Play, Square } from 'lucide-react';
 import { NetworkMap } from './components/NetworkMap';
 import { StatusPanel } from './components/StatusPanel';
 import { ThreatPanel } from './components/ThreatPanel';
@@ -41,6 +41,7 @@ interface NetworkData {
   devices: Device[];
   metrics: SystemMetrics;
   timestamp: number;
+  scanning: boolean;
 }
 
 interface ErrorState {
@@ -96,57 +97,100 @@ function ErrorMessage({ error }: { error: ErrorState }) {
   );
 }
 
+function StatusIndicator({ status }: { status: 'idle' | 'loading' | 'success' | 'error' }) {
+  const getStatusColor = () => {
+    switch (status) {
+      case 'loading': return 'text-[#f59e0b]';
+      case 'success': return 'text-[#00ff00]';
+      case 'error': return 'text-[#ff0033]';
+      default: return 'text-gray-400';
+    }
+  };
+
+  const getStatusText = () => {
+    switch (status) {
+      case 'loading': return 'Scanning network...';
+      case 'success': return 'Network scan complete';
+      case 'error': return 'Scan failed';
+      default: return 'Scanner idle';
+    }
+  };
+
+  return (
+    <div className={`flex items-center space-x-2 ${getStatusColor()}`}>
+      {status === 'loading' && (
+        <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+      )}
+      <span>{getStatusText()}</span>
+    </div>
+  );
+}
+
 function Dashboard() {
   const { widgets, updateWidget, toggleWidget } = useWidgets();
   const [networkData, setNetworkData] = useState<NetworkData | null>(null);
   const [error, setError] = useState<ErrorState | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [fetchStatus, setFetchStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [isScanning, setIsScanning] = useState(false);
+  const intervalRef = useRef<NodeJS.Timeout>();
+
+  const fetchData = async () => {
+    try {
+      setFetchStatus('loading');
+      console.log('Fetching network data...');
+      
+      const response = await fetch('http://localhost:5000/api/network');
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Network data received:', data);
+      
+      setNetworkData(data);
+      setError(null);
+      setFetchStatus('success');
+    } catch (err) {
+      console.error('Error fetching network data:', err);
+      
+      if (err.message.includes('Failed to fetch')) {
+        setError({
+          type: 'error',
+          message: 'Failed to connect to network scanner',
+          details: 'Please ensure the Python server is running with administrator privileges.'
+        });
+      } else {
+        setError({
+          type: 'error',
+          message: 'Network scanning error',
+          details: err.message
+        });
+      }
+      setFetchStatus('error');
+    }
+  };
+
+  const startScanning = () => {
+    setIsScanning(true);
+    fetchData();
+    intervalRef.current = setInterval(fetchData, 30000);
+  };
+
+  const stopScanning = () => {
+    setIsScanning(false);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    setFetchStatus('idle');
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch('http://localhost:5000/api/network');
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        setNetworkData(data);
-        setError(null);
-      } catch (err) {
-        console.error('Error fetching network data:', err);
-        
-        if (err.message.includes('Failed to fetch')) {
-          setError({
-            type: 'error',
-            message: 'Failed to connect to network scanner',
-            details: 'Please ensure the Python server is running with administrator privileges and Nmap is installed correctly.'
-          });
-        } else if (err.message.includes('permission denied')) {
-          setError({
-            type: 'error',
-            message: 'Permission denied',
-            details: 'The network scanner requires administrator privileges. Please restart the application with elevated permissions.'
-          });
-        } else {
-          setError({
-            type: 'error',
-            message: 'Network scanning error',
-            details: err.message
-          });
-        }
-      } finally {
-        setLoading(false);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
       }
     };
-
-    fetchData();
-    const interval = setInterval(fetchData, 30000); // Fetch every 30 seconds
-
-    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -157,8 +201,17 @@ function Dashboard() {
           <Network className="h-6 w-6" />
           <span className="text-xl neon-text">NETWORK SCANNER v1.0</span>
         </div>
-        <div className="flex items-center space-x-4">
-          <span className="text-[#ff0033]">RED TEAM MODE</span>
+        <div className="flex items-center space-x-6">
+          <StatusIndicator status={fetchStatus} />
+          <button
+            onClick={isScanning ? stopScanning : startScanning}
+            className={`flex items-center space-x-2 px-4 py-2 rounded ${
+              isScanning ? 'bg-[#ff0033]/20 hover:bg-[#ff0033]/30' : 'bg-[#00ff00]/20 hover:bg-[#00ff00]/30'
+            }`}
+          >
+            {isScanning ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            <span>{isScanning ? 'Stop Scanning' : 'Start Scanning'}</span>
+          </button>
           <div className="flex space-x-1">
             <div className="w-4 h-4 bg-green-500"></div>
             <div className="w-4 h-4 bg-blue-500"></div>
@@ -169,14 +222,6 @@ function Dashboard() {
 
       {/* Error Message */}
       {error && <ErrorMessage error={error} />}
-
-      {/* Loading State */}
-      {loading && (
-        <div className="cyber-panel p-4 mb-4 text-[#00ff00] flex items-center">
-          <div className="animate-spin h-5 w-5 mr-2 border-2 border-[#00ff00] border-t-transparent rounded-full" />
-          Scanning network...
-        </div>
-      )}
 
       {/* Widget Menu Bar */}
       <MenuBar />
