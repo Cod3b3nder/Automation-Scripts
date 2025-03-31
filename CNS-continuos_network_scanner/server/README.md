@@ -115,7 +115,9 @@ Nmap requires elevated privileges for certain types of scans. Run the server wit
 
 **Linux/macOS:**
 ```bash
+npm run setup #Automated installation
 sudo python app.py
+
 ```
 
 **Windows:**
